@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Vet, lint and test
+    runs-on: ubuntu-latest
+
+    # PostgreSQL for the events writer tests (storage/postgres_events).
+    services:
+      postgres:
+        image: postgres:17.9
+        env:
+          POSTGRES_PASSWORD: e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RELAY_EVENTS_E2E_PG: postgres://postgres:e2e@127.0.0.1:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Create schema for the writer tests
+        run: psql "$RELAY_EVENTS_E2E_PG" -c 'CREATE SCHEMA IF NOT EXISTS edge'
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+
+      - name: Test
+        run: go test -race -count=1 ./...
